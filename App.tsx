@@ -4,7 +4,7 @@ import { Subject, ActivityType, DataUnit, ResourceData, PageHierarchy, StackData
 import { SUBJECTS, LEVELS, SETS, PAGES, ACTIVITY_TYPES } from './constants';
 import { Dropdown } from './components/Dropdown';
 import { ResourceCard } from './components/ResourceCard';
-import { Plus, Database, Layers, FileJson, FileSpreadsheet, BookOpen, RefreshCw, CloudUpload, Upload } from 'lucide-react';
+import { Plus, Database, Layers, FileJson, FileSpreadsheet, BookOpen, RefreshCw, CloudUpload, Upload, ChevronDown } from 'lucide-react';
 
 const App: React.FC = () => {
   const [viewMode, setViewMode] = useState<ViewMode>('PAGE_EDITOR');
@@ -158,13 +158,21 @@ const App: React.FC = () => {
                 <Plus size={24} strokeWidth={3} /> NEW ASSET
               </button>
             </div>
-            {commonResources.map((res, i) => (
-              <CommonResourceItem 
-                key={res.id} idx={i} data={res} subject={hierarchy.subject} 
-                onUpdate={(upd) => updateCommonResource(res.id, upd)}
-                onDelete={() => deleteCommonResource(res.id)} 
-              />
-            ))}
+            <div className="space-y-4">
+              {commonResources.map((res, i) => (
+                <CommonResourceItem 
+                  key={res.id} idx={i} data={res} subject={hierarchy.subject} 
+                  onUpdate={(upd) => updateCommonResource(res.id, upd)}
+                  onDelete={() => deleteCommonResource(res.id)} 
+                />
+              ))}
+              {commonResources.length === 0 && (
+                <div className="py-20 flex flex-col items-center justify-center text-slate-300 border-4 border-dashed border-slate-100 rounded-[4rem]">
+                   <Database size={64} className="mb-4 opacity-20" />
+                   <p className="text-lg font-black uppercase tracking-widest opacity-50">어셋 풀이 비어 있습니다</p>
+                </div>
+              )}
+            </div>
           </div>
         ) : (
           <div className="space-y-10 animate-in fade-in duration-300">
@@ -190,7 +198,7 @@ const App: React.FC = () => {
                       <select 
                         value={stack.activityType} 
                         onChange={(e) => updateStack(stack.id, { activityType: e.target.value as ActivityType })} 
-                        className="bg-white border border-slate-200 rounded-[1.2rem] px-8 py-3 text-sm font-bold text-slate-700 outline-none appearance-none pr-14 cursor-pointer hover:bg-slate-50 transition-all"
+                        className="bg-white border border-slate-200 rounded-[1.2rem] px-8 py-3 text-sm font-bold text-slate-700 outline-none appearance-none pr-14 cursor-pointer hover:bg-slate-50 transition-all min-w-[160px]"
                       >
                         {ACTIVITY_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
                       </select>
@@ -202,7 +210,12 @@ const App: React.FC = () => {
                   <div className="divide-y divide-slate-100">
                     {stack.items.map((item, i) => (
                       <ResourceCard 
-                        key={item.id} index={i} subject={hierarchy.subject} data={item} commonResources={commonResources}
+                        key={item.id} 
+                        index={i} 
+                        subject={hierarchy.subject} 
+                        data={item} 
+                        commonResources={commonResources}
+                        activityType={stack.activityType}
                         onUpdate={(updates) => {
                           const newItems = [...stack.items];
                           newItems[i] = { ...newItems[i], ...updates };
@@ -244,46 +257,46 @@ const CommonResourceItem: React.FC<{ idx: number; data: ResourceData; subject: S
   return (
     <div className="bg-white border-2 border-slate-100 p-8 rounded-[3rem] shadow-md flex flex-col gap-6 group hover:border-emerald-500 transition-all relative">
       <div className="flex gap-10 items-start">
-        <div className="flex flex-col items-center gap-4 min-w-[80px]">
+        <div className="flex flex-col items-center gap-4 min-w-[100px]">
           <div className="bg-emerald-600 text-white font-black text-xl w-12 h-12 rounded-[1rem] flex items-center justify-center shadow-lg">{idx + 1}</div>
-          <select value={data.dataUnit} onChange={(e) => onUpdate({ dataUnit: e.target.value as DataUnit })} className="text-[10px] font-black bg-slate-100 rounded-lg px-3 py-1.5 text-slate-500 uppercase border-none outline-none cursor-pointer">
-            <option value={DataUnit.WORD}>WORD</option>
-            <option value={DataUnit.PHRASE}>PHRASE</option>
-            <option value={DataUnit.SENTENCE}>SENTENCE</option>
-          </select>
+          <div className="relative w-full">
+            <select 
+              value={data.dataUnit} 
+              onChange={(e) => onUpdate({ dataUnit: e.target.value as DataUnit })} 
+              className="w-full text-[10px] font-black bg-slate-100 rounded-lg px-2 py-2 text-slate-500 uppercase border-none outline-none cursor-pointer appearance-none text-center"
+            >
+              <option value={DataUnit.WORD}>WORD</option>
+              <option value={DataUnit.PHRASE}>PHRASE</option>
+              <option value={DataUnit.SENTENCE}>SENTENCE</option>
+            </select>
+          </div>
         </div>
         <div className={`flex-[4] grid ${subLabel ? 'grid-cols-3' : 'grid-cols-2'} gap-6`}>
           <div className="space-y-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">원문</label>
-            <input type="text" className="w-full bg-slate-50 border-2 border-transparent px-5 py-3 rounded-xl text-sm font-bold text-slate-800 focus:bg-white focus:border-emerald-500 outline-none shadow-sm" value={data.text || ''} onChange={(e) => onUpdate({ text: e.target.value })} />
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">원문 (TEXT)</label>
+            <input type="text" className="w-full bg-slate-50 border-2 border-transparent px-5 py-3 rounded-xl text-sm font-bold text-slate-800 focus:bg-white focus:border-emerald-500 outline-none shadow-sm transition-all" value={data.text || ''} onChange={(e) => onUpdate({ text: e.target.value })} />
           </div>
           {subLabel && (
             <div className="space-y-2">
               <label className="text-[10px] font-black text-emerald-600 uppercase tracking-widest ml-1">{subLabel}</label>
-              <input type="text" className="w-full bg-emerald-50/40 border-2 border-transparent px-5 py-3 rounded-xl text-sm font-bold text-emerald-900 focus:bg-white focus:border-emerald-500 outline-none shadow-sm" value={data.subText || ''} onChange={(e) => onUpdate({ subText: e.target.value })} />
+              <input type="text" className="w-full bg-emerald-50/40 border-2 border-transparent px-5 py-3 rounded-xl text-sm font-bold text-emerald-900 focus:bg-white focus:border-emerald-500 outline-none shadow-sm transition-all" value={data.subText || ''} onChange={(e) => onUpdate({ subText: e.target.value })} />
             </div>
           )}
           <div className="space-y-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">해석</label>
-            <input type="text" className="w-full bg-slate-50 border-2 border-transparent px-5 py-3 rounded-xl text-sm font-medium text-slate-600 focus:bg-white focus:border-emerald-500 outline-none shadow-sm" value={data.translation || ''} onChange={(e) => onUpdate({ translation: e.target.value })} />
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">해석 (TRANSLATION)</label>
+            <input type="text" className="w-full bg-slate-50 border-2 border-transparent px-5 py-3 rounded-xl text-sm font-medium text-slate-600 focus:bg-white focus:border-emerald-500 outline-none shadow-sm transition-all" value={data.translation || ''} onChange={(e) => onUpdate({ translation: e.target.value })} />
           </div>
         </div>
         <div className="flex gap-2">
           <input type="file" ref={audioRef} className="hidden" accept="audio/*" onChange={(e) => e.target.files?.[0] && onUpdate({ audioFile: e.target.files[0].name, audioUrl: URL.createObjectURL(e.target.files[0]) })} />
-          <button onClick={() => audioRef.current?.click()} className={`w-12 h-12 rounded-xl border flex items-center justify-center transition-all ${data.audioUrl ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white text-slate-200 border-slate-100 hover:border-blue-500'}`}> <Layers size={18} /> </button>
+          <button onClick={() => audioRef.current?.click()} className={`w-12 h-12 rounded-xl border flex items-center justify-center transition-all ${data.audioUrl ? 'bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-500/20' : 'bg-white text-slate-200 border-slate-100 hover:border-blue-500'}`}> <Layers size={18} /> </button>
           <input type="file" ref={imageRef} className="hidden" accept="image/*" onChange={(e) => e.target.files?.[0] && onUpdate({ imageFile: e.target.files[0].name, imageUrl: URL.createObjectURL(e.target.files[0]) })} />
-          <button onClick={() => imageRef.current?.click()} className={`w-12 h-12 rounded-xl border overflow-hidden flex items-center justify-center transition-all ${data.imageUrl ? 'border-emerald-500' : 'bg-white text-slate-200 border-slate-100 hover:border-emerald-500'}`}>{data.imageUrl ? <img src={data.imageUrl} className="w-full h-full object-cover" /> : <Upload size={18} />}</button>
-          <button onClick={onDelete} className="w-12 h-12 text-slate-200 hover:text-red-500 transition-all flex items-center justify-center"><Plus size={20} className="rotate-45" /></button>
+          <button onClick={() => imageRef.current?.click()} className={`w-12 h-12 rounded-xl border overflow-hidden flex items-center justify-center transition-all ${data.imageUrl ? 'border-emerald-500 shadow-lg shadow-emerald-500/20' : 'bg-white text-slate-200 border-slate-100 hover:border-emerald-500'}`}>{data.imageUrl ? <img src={data.imageUrl} className="w-full h-full object-cover" /> : <Upload size={18} />}</button>
+          <button onClick={onDelete} className="w-12 h-12 text-slate-200 hover:text-red-500 transition-all flex items-center justify-center hover:bg-red-50 rounded-xl"><Plus size={20} className="rotate-45" /></button>
         </div>
       </div>
     </div>
   );
 };
-
-const ChevronDown = ({ size, className }: { size: number, className: string }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={className}>
-    <path d="m6 9 6 6 6-6"/>
-  </svg>
-);
 
 export default App;
