@@ -4,7 +4,8 @@ import { Subject, ActivityType, DataUnit, ResourceData, PageHierarchy, StackData
 import { SUBJECTS, LEVELS, SETS, PAGES, ACTIVITY_TYPES } from './constants';
 import { Dropdown } from './components/Dropdown';
 import { ResourceCard } from './components/ResourceCard';
-import { Plus, Database, Layers, FileJson, FileSpreadsheet, BookOpen, RefreshCw, CloudUpload, Upload, ChevronDown, AlertCircle } from 'lucide-react';
+import { Plus, Database, Layers, FileJson, FileSpreadsheet, BookOpen, RefreshCw, CloudUpload, Upload, ChevronDown, AlertCircle, Sparkles, Wand2, Zap, FileUp } from 'lucide-react';
+import { GoogleGenAI } from "@google/genai";
 
 const App: React.FC = () => {
   const [viewMode, setViewMode] = useState<ViewMode>('PAGE_EDITOR');
@@ -18,6 +19,7 @@ const App: React.FC = () => {
 
   const [globalResources, setGlobalResources] = useState<Record<string, ResourceData[]>>({});
   const [pageStacks, setPageStacks] = useState<StackData[]>([]);
+  const csvInputRef = useRef<HTMLInputElement>(null);
 
   const setKey = useMemo(() => 
     `${hierarchy.subject}-${hierarchy.level}-${hierarchy.set}`, 
@@ -59,19 +61,117 @@ const App: React.FC = () => {
   };
 
   const exportCSV = () => {
-    const headers = ['Subject', 'Level', 'Set', 'Page', 'Stack_Idx', 'Activity', 'Item_Idx', 'Unit', 'Text', 'Translation'];
+    const headers = ['Page', 'Stack_Idx', 'Activity', 'Unit', 'Text(Segmented)', 'SubText/Pinyin', 'Translation'];
     const rows: any[] = [];
+    
     pageStacks.forEach((stack, sIdx) => {
       stack.items.forEach((item, iIdx) => {
-        rows.push([hierarchy.subject, hierarchy.level, hierarchy.set, hierarchy.page, sIdx + 1, stack.activityType, iIdx + 1, item.dataUnit, `"${item.text}"`, `"${item.translation}"`]);
+        rows.push([
+          hierarchy.page,
+          sIdx + 1,
+          stack.activityType,
+          item.dataUnit.toUpperCase(),
+          `"${item.text}"`,
+          `"${item.subText || ''}"`,
+          `"${item.translation}"`
+        ]);
       });
     });
+
+    if (rows.length === 0) {
+      alert("내보낼 페이지 데이터가 없습니다. PAGE EDITOR에서 데이터를 구성해주세요.");
+      return;
+    }
+
     const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
     const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = `edu_db_${setKey}.csv`;
+    link.download = `edu_page_data_${setKey}_P${hierarchy.page}.csv`;
     link.click();
+  };
+
+  // Robust CSV Parser
+  const parseCSV = (text: string) => {
+    const rows: string[][] = [];
+    let currentRow: string[] = [];
+    let currentField = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      const nextChar = text[i + 1];
+
+      if (char === '"' && inQuotes && nextChar === '"') {
+        currentField += '"';
+        i++;
+      } else if (char === '"') {
+        inQuotes = !inQuotes;
+      } else if (char === ',' && !inQuotes) {
+        currentRow.push(currentField.trim());
+        currentField = '';
+      } else if ((char === '\r' || char === '\n') && !inQuotes) {
+        if (currentField || currentRow.length > 0) {
+          currentRow.push(currentField.trim());
+          rows.push(currentRow);
+        }
+        currentRow = [];
+        currentField = '';
+        if (char === '\r' && nextChar === '\n') i++;
+      } else {
+        currentField += char;
+      }
+    }
+    if (currentField || currentRow.length > 0) {
+      currentRow.push(currentField.trim());
+      rows.push(currentRow);
+    }
+    return rows;
+  };
+
+  const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target?.result as string;
+      const rows = parseCSV(content);
+      
+      if (rows.length < 2) {
+        alert("데이터가 없거나 잘못된 형식의 CSV 파일입니다.");
+        return;
+      }
+
+      // Find header indices
+      const headers = rows[0].map(h => h.toLowerCase());
+      const textIdx = headers.indexOf('text');
+      const pinyinIdx = headers.indexOf('pinyin');
+      const transIdx = headers.indexOf('translation');
+
+      if (textIdx === -1 || transIdx === -1) {
+        alert("CSV 파일에 'text'와 'translation' 컬럼이 반드시 포함되어야 합니다.");
+        return;
+      }
+
+      const newResources: ResourceData[] = rows.slice(1).map(row => ({
+        id: crypto.randomUUID(),
+        text: row[textIdx] || '',
+        subText: pinyinIdx !== -1 ? row[pinyinIdx] : '',
+        translation: row[transIdx] || '',
+        dataUnit: (row[textIdx]?.length > 10 || row[textIdx]?.includes(' ')) ? DataUnit.SENTENCE : DataUnit.WORD,
+        isDirectInput: true
+      })).filter(r => r.text !== '');
+
+      setGlobalResources(prev => ({
+        ...prev,
+        [setKey]: [...(prev[setKey] || []), ...newResources]
+      }));
+
+      alert(`${newResources.length}개의 리소스가 성공적으로 임포트되었습니다.`);
+      if (csvInputRef.current) csvInputRef.current.value = '';
+    };
+    reader.readAsText(file, 'UTF-8');
   };
 
   const addCommonResource = () => {
@@ -139,7 +239,7 @@ const App: React.FC = () => {
 
         <div className="flex items-center gap-3">
           <button onClick={exportJSON} className="p-3 hover:bg-white/10 rounded-xl transition-all text-white/70" title="Export JSON"><FileJson size={20} /></button>
-          <button onClick={exportCSV} className="p-3 hover:bg-white/10 rounded-xl transition-all text-white/70" title="CSV"><FileSpreadsheet size={20} /></button>
+          <button onClick={exportCSV} className="p-3 hover:bg-white/10 rounded-xl transition-all text-white/70" title="Export Page CSV"><FileSpreadsheet size={20} /></button>
           <button onClick={handleSaveToCloud} disabled={isSyncing} className="ml-2 bg-blue-600 hover:bg-blue-500 text-white px-8 py-3 rounded-xl font-black text-xs flex items-center gap-2 shadow-lg">
             {isSyncing ? <RefreshCw className="animate-spin" size={14} /> : <CloudUpload size={14} />} CLOUD SAVE
           </button>
@@ -154,9 +254,18 @@ const App: React.FC = () => {
                 <h2 className="text-4xl font-black text-slate-900 tracking-tighter uppercase">Set Asset Pool</h2>
                 <p className="text-slate-500 font-bold mt-2 uppercase text-xs tracking-widest opacity-60">Scope: <span className="text-emerald-600">{setKey}</span></p>
               </div>
-              <button onClick={addCommonResource} className="bg-emerald-600 text-white px-10 py-5 rounded-[2rem] font-black flex items-center gap-3 shadow-2xl hover:scale-105 transition-all">
-                <Plus size={24} strokeWidth={3} /> NEW ASSET
-              </button>
+              <div className="flex gap-4">
+                <input type="file" ref={csvInputRef} className="hidden" accept=".csv" onChange={handleImportCSV} />
+                <button 
+                  onClick={() => csvInputRef.current?.click()}
+                  className="bg-white border-2 border-emerald-600 text-emerald-600 px-8 py-5 rounded-[2rem] font-black flex items-center gap-3 shadow-xl hover:bg-emerald-50 transition-all"
+                >
+                  <FileUp size={24} strokeWidth={3} /> IMPORT CSV
+                </button>
+                <button onClick={addCommonResource} className="bg-emerald-600 text-white px-10 py-5 rounded-[2rem] font-black flex items-center gap-3 shadow-2xl hover:scale-105 transition-all">
+                  <Plus size={24} strokeWidth={3} /> NEW ASSET
+                </button>
+              </div>
             </div>
             <div className="space-y-4">
               {commonResources.map((res, i) => (
@@ -246,36 +355,73 @@ const App: React.FC = () => {
 const CommonResourceItem: React.FC<{ idx: number; data: ResourceData; subject: Subject; onUpdate: (data: Partial<ResourceData>) => void; onDelete: () => void; }> = ({ idx, data, subject, onUpdate, onDelete }) => {
   const audioRef = useRef<HTMLInputElement>(null);
   const imageRef = useRef<HTMLInputElement>(null);
+  const [isAiProcessing, setIsAiProcessing] = useState(false);
   const subLabel = subject === Subject.CHINESE ? '병음' : subject === Subject.JAPANESE ? '후리카나' : null;
 
   // Real-time Slash Synchronization Logic
   const handleTextChange = (newText: string) => {
     const prevSlashCount = (data.text || '').split('/').length - 1;
     const nextSlashCount = newText.split('/').length - 1;
-
     let nextSubText = data.subText || '';
 
-    // If text has slashes, ensure subText has the same number of slashes
     if (nextSlashCount > 0) {
-      const subSegments = nextSubText.split('/');
-      
-      if (nextSlashCount > prevSlashCount) {
-        // Slash added: Add empty segment(s) to subText
-        const diff = nextSlashCount - (subSegments.length - 1);
-        if (diff > 0) {
-          nextSubText = subSegments.concat(Array(diff).fill('')).join('/');
-        }
-      } else if (nextSlashCount < prevSlashCount) {
-        // Slash removed: Merge segment(s) in subText
-        if (subSegments.length > nextSlashCount + 1) {
-          nextSubText = subSegments.slice(0, nextSlashCount + 1).join('/');
+      if (!nextSubText.includes('/') && nextSubText.includes(' ')) {
+        const spaceCount = (nextSubText.match(/ /g) || []).length;
+        if (spaceCount === nextSlashCount) {
+          nextSubText = nextSubText.replace(/ /g, '/');
         }
       }
-    } else if (nextSlashCount === 0 && (subject === Subject.CHINESE || subject === Subject.JAPANESE)) {
-       // Optional: Auto-segmentation if multiple chars entered without slashes (can be enabled if desired)
+      const subSegments = nextSubText.split('/');
+      if (nextSlashCount > prevSlashCount) {
+        const diff = nextSlashCount - (subSegments.length - 1);
+        if (diff > 0) nextSubText = subSegments.concat(Array(diff).fill('')).join('/');
+      } else if (nextSlashCount < prevSlashCount) {
+        if (subSegments.length > nextSlashCount + 1) nextSubText = subSegments.slice(0, nextSlashCount + 1).join('/');
+      }
     }
-
     onUpdate({ text: newText, subText: nextSubText });
+  };
+
+  // NEW: AI Smart Segmentation (TEXT + Pronunciation Joint)
+  const handleAiSmartSegment = async () => {
+    if (!data.text) return;
+    setIsAiProcessing(true);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const prompt = `
+        As a language education specialist, I need to segment the text and its pronunciation into logical units using slashes ('/').
+        
+        Subject: ${subject}
+        Source Text: "${data.text.replace(/\//g, '')}"
+        Current Pronunciation (if any): "${(data.subText || '').replace(/\//g, '')}"
+        
+        Task:
+        1. Segment the Source Text into meaningful linguistic units (words or phrases) using slashes.
+           Example: "我吃饭" -> "我/吃/饭"
+        2. If pronunciation is provided, segment it with slashes to EXACTLY match the number of segments in the source text.
+           Example: "wo chifan" -> "wo/chi/fan"
+        
+        Return the result in JSON format:
+        { "segmentedText": "string", "segmentedSubText": "string" }
+      `;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: prompt,
+        config: { responseMimeType: "application/json" }
+      });
+
+      const result = JSON.parse(response.text || '{}');
+      onUpdate({ 
+        text: result.segmentedText || data.text, 
+        subText: result.segmentedSubText || data.subText 
+      });
+    } catch (error) {
+      console.error("AI Smart Segment Error:", error);
+      alert("AI 스마트 분절 중 오류가 발생했습니다.");
+    } finally {
+      setIsAiProcessing(false);
+    }
   };
 
   const isMismatch = useMemo(() => {
@@ -301,10 +447,17 @@ const CommonResourceItem: React.FC<{ idx: number; data: ResourceData; subject: S
           </div>
         </div>
         <div className={`flex-[4] grid ${subLabel ? 'grid-cols-3' : 'grid-cols-2'} gap-6`}>
-          <div className="space-y-2">
+          <div className="space-y-2 relative">
             <div className="flex justify-between items-center px-1">
                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">원문 (TEXT)</label>
-               <span className="text-[8px] font-bold text-blue-500 uppercase opacity-60">Slash Sync Enabled</span>
+               <button 
+                onClick={handleAiSmartSegment}
+                disabled={isAiProcessing || !data.text}
+                className={`flex items-center gap-1.5 px-2 py-1 rounded-md text-[9px] font-black uppercase tracking-tighter transition-all ${isAiProcessing ? 'animate-pulse text-indigo-400' : 'text-indigo-600 hover:bg-indigo-50 active:scale-95'}`}
+              >
+                {isAiProcessing ? <RefreshCw className="animate-spin" size={10} /> : <Zap size={10} fill="currentColor" />}
+                AI 분절
+              </button>
             </div>
             <input 
               type="text" 
@@ -315,7 +468,7 @@ const CommonResourceItem: React.FC<{ idx: number; data: ResourceData; subject: S
             />
           </div>
           {subLabel && (
-            <div className="space-y-2">
+            <div className="space-y-2 relative">
               <div className="flex justify-between items-center px-1">
                 <label className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">{subLabel}</label>
                 {isMismatch && <AlertCircle size={14} className="text-amber-500 animate-pulse" />}
@@ -325,7 +478,7 @@ const CommonResourceItem: React.FC<{ idx: number; data: ResourceData; subject: S
                 className={`w-full border-2 px-5 py-3 rounded-xl text-sm font-bold focus:bg-white focus:border-emerald-500 outline-none shadow-sm transition-all ${isMismatch ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-emerald-50/40 border-transparent text-emerald-900'}`} 
                 value={data.subText || ''} 
                 onChange={(e) => onUpdate({ subText: e.target.value })} 
-                placeholder="자동 슬래시 생성됨"
+                placeholder="AI 분절 시 자동 동기화"
               />
             </div>
           )}
