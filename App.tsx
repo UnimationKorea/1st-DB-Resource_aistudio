@@ -4,7 +4,7 @@ import { Subject, ActivityType, DataUnit, ResourceData, PageHierarchy, StackData
 import { SUBJECTS, LEVELS, SETS, PAGES, ACTIVITY_TYPES } from './constants';
 import { Dropdown } from './components/Dropdown';
 import { ResourceCard } from './components/ResourceCard';
-import { Plus, Database, Layers, FileJson, FileSpreadsheet, BookOpen, RefreshCw, CloudUpload, Upload, ChevronDown } from 'lucide-react';
+import { Plus, Database, Layers, FileJson, FileSpreadsheet, BookOpen, RefreshCw, CloudUpload, Upload, ChevronDown, AlertCircle } from 'lucide-react';
 
 const App: React.FC = () => {
   const [viewMode, setViewMode] = useState<ViewMode>('PAGE_EDITOR');
@@ -191,7 +191,6 @@ const App: React.FC = () => {
             <div className="space-y-8 pb-24">
               {pageStacks.map((stack, idx) => (
                 <div key={stack.id} className="bg-white rounded-[3rem] border border-slate-200 shadow-sm relative overflow-hidden">
-                  {/* Stack Header (Screenshot Style) */}
                   <div className="bg-slate-50/50 p-6 flex items-center gap-6 border-b border-slate-100">
                     <div className="bg-[#5c56f6] text-white w-12 h-12 rounded-[1.2rem] flex items-center justify-center font-black text-xl shadow-lg">{idx + 1}</div>
                     <div className="relative">
@@ -205,8 +204,6 @@ const App: React.FC = () => {
                       <ChevronDown className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
                     </div>
                   </div>
-                  
-                  {/* Items List (Row Style) */}
                   <div className="divide-y divide-slate-100">
                     {stack.items.map((item, i) => (
                       <ResourceCard 
@@ -225,8 +222,6 @@ const App: React.FC = () => {
                       />
                     ))}
                   </div>
-
-                  {/* Add Item Trigger */}
                   <button 
                     onClick={() => updateStack(stack.id, { items: [...stack.items, { id: crypto.randomUUID(), text: '', translation: '', dataUnit: DataUnit.WORD, isDirectInput: true }] })} 
                     className="w-full py-8 text-slate-300 hover:text-indigo-600 hover:bg-indigo-50/30 transition-all flex items-center justify-center gap-3 group border-t border-slate-50"
@@ -236,7 +231,6 @@ const App: React.FC = () => {
                   </button>
                 </div>
               ))}
-
               <button onClick={addStack} className="w-full py-16 bg-slate-900 rounded-[4rem] text-white flex flex-col items-center justify-center gap-4 hover:bg-slate-800 transition-all shadow-2xl group border border-white/5">
                 <div className="bg-blue-600 p-4 rounded-2xl shadow-2xl group-hover:scale-110 transition-transform"><Plus size={32} strokeWidth={3} /></div>
                 <p className="text-lg font-black tracking-tight uppercase">새 활동 스택 추가</p>
@@ -254,8 +248,43 @@ const CommonResourceItem: React.FC<{ idx: number; data: ResourceData; subject: S
   const imageRef = useRef<HTMLInputElement>(null);
   const subLabel = subject === Subject.CHINESE ? '병음' : subject === Subject.JAPANESE ? '후리카나' : null;
 
+  // Real-time Slash Synchronization Logic
+  const handleTextChange = (newText: string) => {
+    const prevSlashCount = (data.text || '').split('/').length - 1;
+    const nextSlashCount = newText.split('/').length - 1;
+
+    let nextSubText = data.subText || '';
+
+    // If text has slashes, ensure subText has the same number of slashes
+    if (nextSlashCount > 0) {
+      const subSegments = nextSubText.split('/');
+      
+      if (nextSlashCount > prevSlashCount) {
+        // Slash added: Add empty segment(s) to subText
+        const diff = nextSlashCount - (subSegments.length - 1);
+        if (diff > 0) {
+          nextSubText = subSegments.concat(Array(diff).fill('')).join('/');
+        }
+      } else if (nextSlashCount < prevSlashCount) {
+        // Slash removed: Merge segment(s) in subText
+        if (subSegments.length > nextSlashCount + 1) {
+          nextSubText = subSegments.slice(0, nextSlashCount + 1).join('/');
+        }
+      }
+    } else if (nextSlashCount === 0 && (subject === Subject.CHINESE || subject === Subject.JAPANESE)) {
+       // Optional: Auto-segmentation if multiple chars entered without slashes (can be enabled if desired)
+    }
+
+    onUpdate({ text: newText, subText: nextSubText });
+  };
+
+  const isMismatch = useMemo(() => {
+    if (!data.text || !data.subText) return false;
+    return data.text.split('/').length !== data.subText.split('/').length;
+  }, [data.text, data.subText]);
+
   return (
-    <div className="bg-white border-2 border-slate-100 p-8 rounded-[3rem] shadow-md flex flex-col gap-6 group hover:border-emerald-500 transition-all relative">
+    <div className={`bg-white border-2 p-8 rounded-[3rem] shadow-md flex flex-col gap-6 group transition-all relative ${isMismatch ? 'border-amber-400' : 'border-slate-100 hover:border-emerald-500'}`}>
       <div className="flex gap-10 items-start">
         <div className="flex flex-col items-center gap-4 min-w-[100px]">
           <div className="bg-emerald-600 text-white font-black text-xl w-12 h-12 rounded-[1rem] flex items-center justify-center shadow-lg">{idx + 1}</div>
@@ -273,13 +302,31 @@ const CommonResourceItem: React.FC<{ idx: number; data: ResourceData; subject: S
         </div>
         <div className={`flex-[4] grid ${subLabel ? 'grid-cols-3' : 'grid-cols-2'} gap-6`}>
           <div className="space-y-2">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">원문 (TEXT)</label>
-            <input type="text" className="w-full bg-slate-50 border-2 border-transparent px-5 py-3 rounded-xl text-sm font-bold text-slate-800 focus:bg-white focus:border-emerald-500 outline-none shadow-sm transition-all" value={data.text || ''} onChange={(e) => onUpdate({ text: e.target.value })} />
+            <div className="flex justify-between items-center px-1">
+               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">원문 (TEXT)</label>
+               <span className="text-[8px] font-bold text-blue-500 uppercase opacity-60">Slash Sync Enabled</span>
+            </div>
+            <input 
+              type="text" 
+              className="w-full bg-slate-50 border-2 border-transparent px-5 py-3 rounded-xl text-sm font-bold text-slate-800 focus:bg-white focus:border-emerald-500 outline-none shadow-sm transition-all" 
+              value={data.text || ''} 
+              onChange={(e) => handleTextChange(e.target.value)} 
+              placeholder="예: 你/吃/饭/了/吗"
+            />
           </div>
           {subLabel && (
             <div className="space-y-2">
-              <label className="text-[10px] font-black text-emerald-600 uppercase tracking-widest ml-1">{subLabel}</label>
-              <input type="text" className="w-full bg-emerald-50/40 border-2 border-transparent px-5 py-3 rounded-xl text-sm font-bold text-emerald-900 focus:bg-white focus:border-emerald-500 outline-none shadow-sm transition-all" value={data.subText || ''} onChange={(e) => onUpdate({ subText: e.target.value })} />
+              <div className="flex justify-between items-center px-1">
+                <label className="text-[10px] font-black text-emerald-600 uppercase tracking-widest">{subLabel}</label>
+                {isMismatch && <AlertCircle size={14} className="text-amber-500 animate-pulse" />}
+              </div>
+              <input 
+                type="text" 
+                className={`w-full border-2 px-5 py-3 rounded-xl text-sm font-bold focus:bg-white focus:border-emerald-500 outline-none shadow-sm transition-all ${isMismatch ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-emerald-50/40 border-transparent text-emerald-900'}`} 
+                value={data.subText || ''} 
+                onChange={(e) => onUpdate({ subText: e.target.value })} 
+                placeholder="자동 슬래시 생성됨"
+              />
             </div>
           )}
           <div className="space-y-2">
@@ -295,6 +342,11 @@ const CommonResourceItem: React.FC<{ idx: number; data: ResourceData; subject: S
           <button onClick={onDelete} className="w-12 h-12 text-slate-200 hover:text-red-500 transition-all flex items-center justify-center hover:bg-red-50 rounded-xl"><Plus size={20} className="rotate-45" /></button>
         </div>
       </div>
+      {isMismatch && (
+        <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 bg-amber-500 text-white text-[9px] font-black px-4 py-1 rounded-full shadow-lg border border-amber-400 flex items-center gap-2">
+          <AlertCircle size={10} /> 원문과 병음의 세그먼트(슬래시) 개수가 일치하지 않습니다!
+        </div>
+      )}
     </div>
   );
 };
